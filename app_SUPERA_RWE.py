@@ -111,8 +111,9 @@ if uploaded_pdf:
     raw = read_pdf_text_blocks(uploaded_pdf.read())
     blocks = split_contributions(raw)
 
-   parsed_rows = [parse_block(b) for b in blocks]
-df_pred = pd.DataFrame(parsed_rows)
+    # 🔧 CORREÇÃO AQUI — DataFrame certo e indentação perfeita
+    parsed_rows = [parse_block(b) for b in blocks]
+    df_pred = pd.DataFrame(parsed_rows)
 
     # Garantir que tudo é texto antes da vetorização
     df_pred["Texto_unificado"] = df_pred["Texto_unificado"].fillna("").astype(str)
