@@ -82,6 +82,45 @@ if uploaded_pdf:
     st.subheader("📄 Amostra das contribuições classificadas")
     st.dataframe(df_pred.head(20))
 
+# ======================================================
+# 🔥 TABELA ANALÍTICA (igual ao modelo do Colab)
+# ======================================================
+cols = [
+    "Nivel_RWE", "Confianca", "Tipo_de_respondente", 
+    "Data", "Opiniao", "Experiencia", 
+    "Evidencias_clinicas", "Estudos_economicos",
+    "Texto_unificado"
+]
+
+df_pp = df_pred[cols].copy()
+
+df_pp.rename(columns={
+    "Nivel_RWE": "Nível RWE",
+    "Confianca": "Probabilidade (%)",
+    "Tipo_de_respondente": "Respondente",
+    "Opiniao": "Opinião",
+    "Experiencia": "Experiência",
+    "Evidencias_clinicas": "Evidências clínicas",
+    "Estudos_economicos": "Econômico",
+    "Texto_unificado": "Texto completo"
+}, inplace=True)
+
+st.subheader("📊 Tabela analítica (pronta para PowerPoint)")
+st.dataframe(df_pp, use_container_width=True)
+
+# botão de exportar tabela analítica isolada
+import io
+buffer_pp = io.BytesIO()
+df_pp.to_excel(buffer_pp, index=False)
+buffer_pp.seek(0)
+
+st.download_button(
+    label="📥 Baixar tabela analítica (Excel)",
+    data=buffer_pp,
+    file_name="tabela_analitica_SUPERA_RWE.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
     # ===========================================
     # Download Excel (corrigido)
     # ===========================================
