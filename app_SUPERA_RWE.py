@@ -110,8 +110,11 @@ if uploaded_pdf:
 
     df_pred = pd.DataFrame({"Texto_unificado": [parse_block(b) for b in blocks]})
 
-    # Vetorização
-    X_vec = vectorizer.transform(df_pred["Texto_unificado"])
+    # Garantir que tudo é texto antes de vetorização
+df_pred["Texto_unificado"] = df_pred["Texto_unificado"].fillna("").astype(str)
+
+# Vetorização
+X_vec = vectorizer.transform(df_pred["Texto_unificado"])
     probs = clf.predict_proba(X_vec)[:, 1]
     preds = (probs >= 0.5).astype(int)
 
