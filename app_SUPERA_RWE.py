@@ -102,6 +102,19 @@ if uploaded_pdf:
         "Texto_unificado"
     ]
 
+        # Garantir todas as colunas obrigatórias
+    for c in [
+        "Opiniao", 
+        "Experiencia", 
+        "Evidencias_clinicas", 
+        "Estudos_economicos",
+        "Tipo_de_respondente",
+        "Data",
+        "Texto_unificado"
+    ]:
+        if c not in df_pred.columns:
+            df_pred[c] = ""
+
     df_pp = df_pred[cols].copy()
 
     df_pp.rename(columns={
