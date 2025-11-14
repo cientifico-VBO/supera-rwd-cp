@@ -43,9 +43,59 @@ def split_contributions(raw_text):
     blocks = [b.strip() for b in t.split("<<END>>") if len(b.strip()) > 40]
     return blocks
 
-def parse_block(text):
-    """Retorna o texto limpo de cada contribuição."""
-    return clean_text(text)
+def extract_section(text, start_label, end_label=None):
+    """
+    Extrai o conteúdo entre '1ª -' e '2ª -', mesmo com quebras de linha.
+    """
+    start = rf"{start_label}\s*[-–]\s*"
+    end = rf"(?={end_label}\s*[-–])" if end_label else "$"
+    pattern = start + r"(.*?)" + end
+
+    match = re.search(pattern, text, flags=re.DOTALL | re.IGNORECASE)
+    return clean_text(match.group(1)) if match else ""
+
+
+def parse_block(block_text):
+    """
+    Extrai: tipo respondente, data, 1ª a 5ª respostas e texto unificado.
+    """
+    b = clean_text(block_text)
+
+    # Tipo de respondente
+    tipo = "Outro/Indefinido"
+    if re.search(r'Familiar|cuidador', b, flags=re.I):
+        tipo = "Familiar/cuidador"
+    elif re.search(r'Profissional|médic|enfermeir|farmac', b, flags=re.I):
+        tipo = "Profissional de saúde"
+    elif re.search(r'Paciente', b, flags=re.I):
+        tipo = "Paciente"
+    elif re.search(r'Interessado', b, flags=re.I):
+        tipo = "Interessado no tema"
+
+    # Data
+    datas = re.findall(r'\d{2}/\d{2}/\d{4}', b)
+    data_val = datas[-1] if datas else ""
+
+    # Extração das seções 1ª–5ª
+    opiniao     = extract_section(b, "1ª", "2ª")
+    experiencia = extract_section(b, "2ª", "3ª")
+    outra_tec   = extract_section(b, "3ª", "4ª")
+    evidencias  = extract_section(b, "4ª", "5ª")
+    economia    = extract_section(b, "5ª", None)
+
+    # Texto unificado (insumo do modelo)
+    texto_unificado = clean_text(" ".join([opiniao, experiencia, evidencias, economia]))
+
+    return {
+        "Tipo_de_respondente": tipo,
+        "Data": data_val,
+        "Opiniao": opiniao,
+        "Experiencia": experiencia,
+        "Outra_tecnologia": outra_tec,
+        "Evidencias_clinicas": evidencias,
+        "Estudos_economicos": economia,
+        "Texto_unificado": texto_unificado
+    }
 
 # ===========================================
 # 3. Upload do PDF
