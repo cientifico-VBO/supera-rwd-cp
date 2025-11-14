@@ -41,8 +41,63 @@ def split_contributions(raw_text):
     blocks = [b.strip() for b in t.split("<<END>>") if len(b.strip()) > 40]
     return blocks
 
-def parse_block(text):
-    return clean_text(text)
+def parse_block(block_text):
+    """Extrai campos estruturados (igual ao modelo do Colab)."""
+
+    b = " " + clean_text(block_text) + " "
+
+    # Tipo de respondente
+    if re.search(r'Familiar|cuidador', b, re.IGNORECASE):
+        tipo = "Familiar/cuidador"
+    elif re.search(r'Profissional|médic|enfermeir|farmacêutic', b, re.IGNORECASE):
+        tipo = "Profissional de saúde"
+    elif re.search(r'Paciente\b', b, re.IGNORECASE):
+        tipo = "Paciente"
+    elif re.search(r'Interessado', b, re.IGNORECASE):
+        tipo = "Interessado no tema"
+    else:
+        tipo = "Outro/Indefinido"
+
+    # Data
+    datas = re.findall(r'(\d{2}/\d{2}/\d{4})', b)
+    data_val = datas[-1] if datas else ""
+
+    def extract(patterns):
+        for pat in patterns:
+            m = re.search(pat, b, flags=re.IGNORECASE | re.DOTALL)
+            if m:
+                return clean_text(m.group(1))
+        return ""
+
+    opiniao = extract([
+        r'1[ªa]?\s*[-–]\s*(.*?)(?=2[ªa]?\s*[-–]|$)',
+        r'12\s*[-–]\s*(.*?)(?=22\s*[-–]|$)'
+    ])
+
+    experiencia = extract([
+        r'2[ªa]?\s*[-–]\s*(.*?)(?=3[ªa]?\s*[-–]|$)',
+        r'22\s*[-–]\s*(.*?)(?=32\s*[-–]|$)'
+    ])
+
+    evidencias = extract([
+        r'4[ªa]?\s*[-–]\s*(.*?)(?=5[ªa]?\s*[-–]|$)',
+        r'42\s*[-–]\s*(.*?)(?=52\s*[-–]|$)'
+    ])
+
+    economico = extract([
+        r'5[ªa]?\s*[-–]\s*(.*?)(?=$)',
+        r'52\s*[-–]\s*(.*?)(?=$)'
+    ])
+
+    return {
+        "Tipo_de_respondente": tipo,
+        "Data": data_val,
+        "Opiniao": opiniao,
+        "Experiencia": experiencia,
+        "Evidencias_clinicas": evidencias,
+        "Estudos_economicos": economico,
+        "Texto_unificado": clean_text(" ".join([opiniao, experiencia, evidencias, economico]))
+    }
 
 # ===========================================
 # 3. Upload do PDF
@@ -56,7 +111,8 @@ if uploaded_pdf:
     raw = read_pdf_text_blocks(uploaded_pdf.read())
     blocks = split_contributions(raw)
 
-    df_pred = pd.DataFrame({"Texto_unificado": [parse_block(b) for b in blocks]})
+   parsed_rows = [parse_block(b) for b in blocks]
+df_pred = pd.DataFrame(parsed_rows)
 
     # Garantir que tudo é texto antes da vetorização
     df_pred["Texto_unificado"] = df_pred["Texto_unificado"].fillna("").astype(str)
