@@ -3,63 +3,99 @@ import pandas as pd
 import fitz
 import re
 import pickle
+import io
 
-# =========================================
-# 1. Carregar modelo e vectorizer
-# =========================================
-clf = pickle.load(open("modelo_rwe.pkl", "rb"))
-vectorizer = pickle.load(open("vectorizer_rwe.pkl", "rb"))
+# ===========================================
+# 1. Carregar modelo e vetorizar
+# ===========================================
+with open("modelo_rwe.pkl", "rb") as f:
+    clf = pickle.load(f)
 
-# =========================================
+with open("vectorizer_rwe.pkl", "rb") as f:
+    vectorizer = pickle.load(f)
+
+st.title("SUPERA – Analisador de Consultas Públicas (RWE)")
+st.write("Upload do PDF → extração automática → classificação RWE → relatório.")
+
+# ===========================================
 # 2. Funções auxiliares
-# =========================================
-def clean_text(s: str) -> str:
+# ===========================================
+def clean_text(s):
     if not isinstance(s, str):
         return ""
     s = s.replace("\xa0", " ")
     s = re.sub(r"[ \t]+", " ", s)
     return s.strip()
 
-def extract_text_from_pdf(uploaded_file):
-    doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
-    text = "\n".join([page.get_text("text") for page in doc])
+def read_pdf_text_blocks(pdf_bytes):
+    """Extrai texto do PDF página por página."""
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    text = []
+    for page in doc:
+        text.append(page.get_text("text"))
+    doc.close()
+    return clean_text("\n".join(text))
+
+def split_contributions(raw_text):
+    """Divide o texto da CP em blocos de contribuições."""
+    t = clean_text(raw_text)
+    t = re.sub(r"(\d{2}/\d{2}/\d{4})", r"\1\n<<END>>\n", t)
+    blocks = [b.strip() for b in t.split("<<END>>") if len(b.strip()) > 40]
+    return blocks
+
+def parse_block(text):
+    """Retorna o texto limpo de cada contribuição."""
     return clean_text(text)
 
-# =========================================
-# 3. Interface Streamlit
-# =========================================
-st.title("📊 SUPERA – Analisador de Consultas Públicas (RWE)")
-
-uploaded_pdf = st.file_uploader("Faça upload do PDF da Consulta Pública", type=["pdf"])
+# ===========================================
+# 3. Upload do PDF
+# ===========================================
+uploaded_pdf = st.file_uploader("Faça upload do PDF da consulta pública", type=["pdf"])
 
 if uploaded_pdf:
-    st.info("Processando PDF...")
+    st.info("Processando PDF… aguarde alguns segundos.")
 
-    # Extrair texto
-    full_text = extract_text_from_pdf(uploaded_pdf)
+    raw = read_pdf_text_blocks(uploaded_pdf.read())
+    blocks = split_contributions(raw)
 
-    # Criar DataFrame simples (versão leve)
-    df = pd.DataFrame({"Texto_unificado": [full_text]})
-    
-    # Vetorizar e classificar
-    X_vec = vectorizer.transform(df["Texto_unificado"])
-    prob = clf.predict_proba(X_vec)[0][1]
-    pred = int(prob >= 0.5)
+    df_pred = pd.DataFrame({"Texto_unificado": [parse_block(b) for b in blocks]})
 
-    # Exibir resultado
-    st.subheader("Resultado")
-    st.metric("Probabilidade de conter RWE", f"{prob*100:.1f}%")
-    st.metric("Classificação", "RWE" if pred==1 else "Não-RWE")
+    # Vetorização
+    X_vec = vectorizer.transform(df_pred["Texto_unificado"])
+    probs = clf.predict_proba(X_vec)[:, 1]
+    preds = (probs >= 0.5).astype(int)
 
-    # Exportar
-    output = df.copy()
-    output["probabilidade"] = prob
-    output["predicao"] = pred
+    df_pred["RWE_predito"] = preds
+    df_pred["Confianca"] = (probs * 100).round(1)
+
+    # ===========================================
+    # Resumo
+    # ===========================================
+    st.success("PDF processado com sucesso!")
+
+    st.metric("Total de contribuições", len(df_pred))
+    st.metric("% com RWE", f"{df_pred['RWE_predito'].mean() * 100:.1f}%")
+
+    st.subheader("📊 Distribuição de RWE")
+    st.bar_chart(df_pred["RWE_predito"].value_counts())
+
+    st.subheader("📄 Amostra das contribuições classificadas")
+    st.dataframe(df_pred.head(20))
+
+    # ===========================================
+    # Download Excel (corrigido)
+    # ===========================================
+    st.subheader("📁 Baixar Excel com análise completa")
+
+    buffer = io.BytesIO()
+    df_pred.to_excel(buffer, index=False, engine="openpyxl")
+    buffer.seek(0)
 
     st.download_button(
-        label="📁 Baixar resultado em Excel",
-        data=output.to_excel(index=False),
-        file_name="resultado_RWE.xlsx"
+        label="Baixar relatório Excel",
+        data=buffer,
+        file_name="relatorio_SUPERA_RWE.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    st.success("Análise concluída!")
+    st.success("Relatório pronto para download!")
