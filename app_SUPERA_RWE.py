@@ -68,6 +68,16 @@ if uploaded_pdf:
     df_pred["RWE_predito"] = preds
     df_pred["Confianca"] = (probs * 100).round(1)
 
+        # Criar nível de RWE baseado na confiança
+    def nivel_rwe(p):
+        if p >= 75:
+            return "Alto"
+        elif p >= 50:
+            return "Médio"
+        else:
+            return "Baixo"
+
+    df_pred["Nivel_RWE"] = df_pred["Confianca"].apply(nivel_rwe)
     # ===========================================
     # Resumo
     # ===========================================
