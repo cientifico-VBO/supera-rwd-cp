@@ -6,7 +6,7 @@ import pickle
 import io
 
 # ===========================================
-# 1. Carregar modelo e vetorizar
+# 1. Carregar modelo e vectorizer
 # ===========================================
 with open("modelo_rwe.pkl", "rb") as f:
     clf = pickle.load(f)
@@ -28,7 +28,6 @@ def clean_text(s):
     return s.strip()
 
 def read_pdf_text_blocks(pdf_bytes):
-    """Extrai texto do PDF página por página."""
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     text = []
     for page in doc:
@@ -37,65 +36,13 @@ def read_pdf_text_blocks(pdf_bytes):
     return clean_text("\n".join(text))
 
 def split_contributions(raw_text):
-    """Divide o texto da CP em blocos de contribuições."""
     t = clean_text(raw_text)
     t = re.sub(r"(\d{2}/\d{2}/\d{4})", r"\1\n<<END>>\n", t)
     blocks = [b.strip() for b in t.split("<<END>>") if len(b.strip()) > 40]
     return blocks
 
-def extract_section(text, start_label, end_label=None):
-    """
-    Extrai o conteúdo entre '1ª -' e '2ª -', mesmo com quebras de linha.
-    """
-    start = rf"{start_label}\s*[-–]\s*"
-    end = rf"(?={end_label}\s*[-–])" if end_label else "$"
-    pattern = start + r"(.*?)" + end
-
-    match = re.search(pattern, text, flags=re.DOTALL | re.IGNORECASE)
-    return clean_text(match.group(1)) if match else ""
-
-
-def parse_block(block_text):
-    """
-    Extrai: tipo respondente, data, 1ª a 5ª respostas e texto unificado.
-    """
-    b = clean_text(block_text)
-
-    # Tipo de respondente
-    tipo = "Outro/Indefinido"
-    if re.search(r'Familiar|cuidador', b, flags=re.I):
-        tipo = "Familiar/cuidador"
-    elif re.search(r'Profissional|médic|enfermeir|farmac', b, flags=re.I):
-        tipo = "Profissional de saúde"
-    elif re.search(r'Paciente', b, flags=re.I):
-        tipo = "Paciente"
-    elif re.search(r'Interessado', b, flags=re.I):
-        tipo = "Interessado no tema"
-
-    # Data
-    datas = re.findall(r'\d{2}/\d{2}/\d{4}', b)
-    data_val = datas[-1] if datas else ""
-
-    # Extração das seções 1ª–5ª
-    opiniao     = extract_section(b, "1ª", "2ª")
-    experiencia = extract_section(b, "2ª", "3ª")
-    outra_tec   = extract_section(b, "3ª", "4ª")
-    evidencias  = extract_section(b, "4ª", "5ª")
-    economia    = extract_section(b, "5ª", None)
-
-    # Texto unificado (insumo do modelo)
-    texto_unificado = clean_text(" ".join([opiniao, experiencia, evidencias, economia]))
-
-    return {
-        "Tipo_de_respondente": tipo,
-        "Data": data_val,
-        "Opiniao": opiniao,
-        "Experiencia": experiencia,
-        "Outra_tecnologia": outra_tec,
-        "Evidencias_clinicas": evidencias,
-        "Estudos_economicos": economia,
-        "Texto_unificado": texto_unificado
-    }
+def parse_block(text):
+    return clean_text(text)
 
 # ===========================================
 # 3. Upload do PDF
@@ -103,6 +50,7 @@ def parse_block(block_text):
 uploaded_pdf = st.file_uploader("Faça upload do PDF da consulta pública", type=["pdf"])
 
 if uploaded_pdf:
+
     st.info("Processando PDF… aguarde alguns segundos.")
 
     raw = read_pdf_text_blocks(uploaded_pdf.read())
@@ -110,18 +58,18 @@ if uploaded_pdf:
 
     df_pred = pd.DataFrame({"Texto_unificado": [parse_block(b) for b in blocks]})
 
-    # Garantir que tudo é texto antes de vetorização
-df_pred["Texto_unificado"] = df_pred["Texto_unificado"].fillna("").astype(str)
+    # Garantir que tudo é texto antes da vetorização
+    df_pred["Texto_unificado"] = df_pred["Texto_unificado"].fillna("").astype(str)
 
-# Vetorização
-X_vec = vectorizer.transform(df_pred["Texto_unificado"])
+    # Vetorização
+    X_vec = vectorizer.transform(df_pred["Texto_unificado"])
     probs = clf.predict_proba(X_vec)[:, 1]
     preds = (probs >= 0.5).astype(int)
 
     df_pred["RWE_predito"] = preds
     df_pred["Confianca"] = (probs * 100).round(1)
 
-        # Criar nível de RWE baseado na confiança
+    # Criar nível de RWE baseado na confiança
     def nivel_rwe(p):
         if p >= 75:
             return "Alto"
@@ -131,6 +79,7 @@ X_vec = vectorizer.transform(df_pred["Texto_unificado"])
             return "Baixo"
 
     df_pred["Nivel_RWE"] = df_pred["Confianca"].apply(nivel_rwe)
+
     # ===========================================
     # Resumo
     # ===========================================
@@ -155,7 +104,7 @@ X_vec = vectorizer.transform(df_pred["Texto_unificado"])
         "Texto_unificado"
     ]
 
-        # Garantir todas as colunas obrigatórias
+    # Garantir colunas
     for c in [
         "Opiniao", 
         "Experiencia", 
@@ -184,8 +133,7 @@ X_vec = vectorizer.transform(df_pred["Texto_unificado"])
     st.subheader("📊 Tabela analítica (pronta para PowerPoint)")
     st.dataframe(df_pp, use_container_width=True)
 
-    # botão de exportar tabela analítica isolada
-    import io
+    # botão: baixar tabela analítica
     buffer_pp = io.BytesIO()
     df_pp.to_excel(buffer_pp, index=False)
     buffer_pp.seek(0)
@@ -197,15 +145,12 @@ X_vec = vectorizer.transform(df_pred["Texto_unificado"])
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    # ===========================================
-    # Download Excel geral
-    # ===========================================
-    st.subheader("📁 Baixar Excel com análise completa")
-
+    # botão: baixar relatório completo
     buffer = io.BytesIO()
     df_pred.to_excel(buffer, index=False)
     buffer.seek(0)
 
+    st.subheader("📁 Baixar Excel com análise completa")
     st.download_button(
         label="📥 Baixar relatório completo",
         data=buffer,
